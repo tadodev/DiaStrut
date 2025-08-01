@@ -12,7 +12,7 @@ namespace DiaStrut.Plugin.Components.Geometry
     public class CreateSurfaceFromVertices : GH_Component
     {
         public CreateSurfaceFromVertices()
-          : base("CreateSurfaceFromVertices", "SFV",
+          : base("Create Surface From Vertices", "SFV",
               "Create surfaces from a tree of surface vertex points (4 per surface)",
               "DiaStrut", "Geometry")
         {

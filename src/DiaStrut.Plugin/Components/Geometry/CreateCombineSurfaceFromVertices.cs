@@ -15,7 +15,7 @@ namespace DiaStrut.Plugin.Components.Geometry
         /// Initializes a new instance of the CreateCombineSurfaceFromVertices class.
         /// </summary>
         public CreateCombineSurfaceFromVertices()
-          : base("CreateCombineSurfaceFromVertices", "CFV",
+          : base("Create Combine Surface From Vertices", "CFV",
               "Create a combined surface from a tree of surface vertex points (4 per surface)",
               "DiaStrut", "Geometry")
         {
