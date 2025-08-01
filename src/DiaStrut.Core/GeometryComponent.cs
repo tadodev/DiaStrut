@@ -1,4 +1,7 @@
-﻿using Rhino.Geometry;
+﻿using Grasshopper;
+using Rhino.Geometry;
+using System;
+using System.Collections.Generic;
 
 namespace DiaStrut.Core;
 
@@ -31,4 +34,33 @@ public class GeometryComponent
         return spiral;
     }
 
+    public static Surface CreateCombineSurfaceFromVertices(DataTree<Point3d> tree)
+    {
+        var breps = new List<Brep>();
+
+        foreach (var branch in tree.Branches)
+        {
+            if (branch.Count != 4)
+                throw new ArgumentException("Each branch must contain exactly 4 points.");
+
+            var surface = NurbsSurface.CreateFromCorners(branch[0], branch[1], branch[2], branch[3]);
+            if (surface == null)
+                throw new InvalidOperationException("Failed to create surface from branch.");
+
+            breps.Add(surface.ToBrep());
+        }
+
+        var joined = Brep.JoinBreps(breps, Rhino.RhinoDoc.ActiveDoc?.ModelAbsoluteTolerance ?? 1e-6);
+        if (joined == null || joined.Length == 0)
+            throw new InvalidOperationException("Failed to join Breps.");
+
+        var merged = joined[0];
+        merged.MergeCoplanarFaces(Rhino.RhinoDoc.ActiveDoc?.ModelAngleToleranceRadians ?? 0.01);
+
+        if (merged.Faces.Count == 1)
+            return merged.Faces[0].UnderlyingSurface();
+
+        throw new InvalidOperationException("Could not merge all faces into one surface.");
+    }
+}
 }

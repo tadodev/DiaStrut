@@ -3,7 +3,7 @@ using Grasshopper.Kernel;
 using Rhino.Geometry;
 using System;
 
-namespace DiaStrut.Plugin
+namespace DiaStrut.Plugin.Components.Geometry
 {
     public class DiaStrut_PluginComponent : GH_Component
     {
@@ -15,8 +15,8 @@ namespace DiaStrut.Plugin
         /// new tabs/panels will automatically be created.
         /// </summary>
         public DiaStrut_PluginComponent()
-          : base("DiaStrut.Plugin Component", "Nickname",
-            "Description of component",
+          : base("Create Spiral", "CR",
+            "Generates a spiral curve based on specified parameters",
             "DiaStrut", "Geometry")
         {
         }
@@ -24,7 +24,7 @@ namespace DiaStrut.Plugin
         /// <summary>
         /// Registers all the input parameters for this component.
         /// </summary>
-        protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
+        protected override void RegisterInputParams(GH_InputParamManager pManager)
         {
             // Use the pManager object to register your input parameters.
             // You can often supply default values when creating parameters.
@@ -43,7 +43,7 @@ namespace DiaStrut.Plugin
         /// <summary>
         /// Registers all the output parameters for this component.
         /// </summary>
-        protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
+        protected override void RegisterOutputParams(GH_OutputParamManager pManager)
         {
             // Use the pManager object to register your output parameters.
             // Output parameters do not have default values, but they too must have the correct access type.
