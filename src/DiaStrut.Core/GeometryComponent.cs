@@ -1,4 +1,5 @@
 ﻿using Grasshopper;
+using Grasshopper.Kernel.Data;
 using Rhino.Geometry;
 using System;
 using System.Collections.Generic;
@@ -79,5 +80,26 @@ public class GeometryComponent
         }
 
         return (trimmedFace, outerLoop, innerLoops);
+    }
+
+    public static DataTree<Surface> CreateSurfaceFromVertices(DataTree<Point3d> tree)
+    {
+        var surfaces = new DataTree<Surface>();
+
+        for (int i = 0; i < tree.BranchCount; i++)
+        {
+            var branch = tree.Branch(i);
+            if (branch.Count != 4)
+                throw new ArgumentException("Each branch must contain exactly 4 points.");
+
+            var surface = NurbsSurface.CreateFromCorners(branch[0], branch[1], branch[2], branch[3]);
+            if (surface == null)
+                throw new InvalidOperationException("Failed to create surface from branch.");
+
+            var path = tree.Path(i);
+            surfaces.Add(surface, path);
+        }
+
+        return surfaces;
     }
 }
