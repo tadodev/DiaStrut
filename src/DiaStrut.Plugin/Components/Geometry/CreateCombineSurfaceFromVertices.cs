@@ -35,8 +35,9 @@ namespace DiaStrut.Plugin.Components.Geometry
         /// </summary>
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
-            pManager.AddSurfaceParameter("Surface", "S",
-                "Combined surface from vertices", GH_ParamAccess.item);
+            pManager.AddBrepParameter("Trimmed Surface", "T", "Final surface with trims (holes)", GH_ParamAccess.item);
+            pManager.AddCurveParameter("Outer", "O", "Outer boundary", GH_ParamAccess.item);
+            pManager.AddCurveParameter("Holes", "H", "Inner cutout curves", GH_ParamAccess.list);
         }
 
         /// <summary>
@@ -64,8 +65,10 @@ namespace DiaStrut.Plugin.Components.Geometry
 
             try
             {
-                var surface = GeometryComponent.CreateCombineSurfaceFromVertices(tree);
-                DA.SetData(0, surface);
+                var (brep, outer, holes) = GeometryComponent.CreateCombinedTrimmedSurface(tree);
+                DA.SetData(0, brep);
+                DA.SetData(1, outer);
+                DA.SetDataList(2, holes);
             }
             catch (Exception ex)
             {

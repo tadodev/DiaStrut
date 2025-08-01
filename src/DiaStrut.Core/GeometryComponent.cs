@@ -34,7 +34,7 @@ public class GeometryComponent
         return spiral;
     }
 
-    public static Surface CreateCombineSurfaceFromVertices(DataTree<Point3d> tree)
+    public static (Brep brep, Curve outerBoundary, List<Curve> innerHoles) CreateCombinedTrimmedSurface(DataTree<Point3d> tree)
     {
         var breps = new List<Brep>();
 
@@ -45,22 +45,39 @@ public class GeometryComponent
 
             var surface = NurbsSurface.CreateFromCorners(branch[0], branch[1], branch[2], branch[3]);
             if (surface == null)
-                throw new InvalidOperationException("Failed to create surface from branch.");
+                throw new InvalidOperationException("Failed to create surface from a branch.");
 
             breps.Add(surface.ToBrep());
         }
 
-        var joined = Brep.JoinBreps(breps, Rhino.RhinoDoc.ActiveDoc?.ModelAbsoluteTolerance ?? 1e-6);
+        double joinTol = Rhino.RhinoDoc.ActiveDoc?.ModelAbsoluteTolerance ?? 1e-6;
+        var joined = Brep.JoinBreps(breps, joinTol);
         if (joined == null || joined.Length == 0)
             throw new InvalidOperationException("Failed to join Breps.");
 
         var merged = joined[0];
-        merged.MergeCoplanarFaces(Rhino.RhinoDoc.ActiveDoc?.ModelAngleToleranceRadians ?? 0.01);
+        double angleTol = Rhino.RhinoDoc.ActiveDoc?.ModelAngleToleranceRadians ?? 0.01;
+        merged.MergeCoplanarFaces(angleTol);
 
-        if (merged.Faces.Count == 1)
-            return merged.Faces[0].UnderlyingSurface();
+        if (merged.Faces.Count != 1)
+            throw new InvalidOperationException("Could not merge all faces into one trimmed face.");
 
-        throw new InvalidOperationException("Could not merge all faces into one surface.");
+        var face = merged.Faces[0];
+        var trimmedFace = face.DuplicateFace(false); // false = keep trimming
+
+        // Extract loops
+        Curve outerLoop = null;
+        List<Curve> innerLoops = new List<Curve>();
+
+        foreach (var loop in face.Loops)
+        {
+            var loopCurve = loop.To3dCurve();
+            if (loop.LoopType == BrepLoopType.Outer)
+                outerLoop = loopCurve;
+            else if (loop.LoopType == BrepLoopType.Inner)
+                innerLoops.Add(loopCurve);
+        }
+
+        return (trimmedFace, outerLoop, innerLoops);
     }
-}
 }
