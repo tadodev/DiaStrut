@@ -1,14 +1,13 @@
 ﻿using Grasshopper;
-using Grasshopper.Kernel.Data;
 using Rhino.Geometry;
 using System;
 using System.Collections.Generic;
 
-namespace DiaStrut.Core;
+namespace DiaStrut.Core.Geometry;
 
-public class GeometryComponent
+public class SurfaceComponent
 {
-    public GeometryComponent()
+    public SurfaceComponent()
     {
         // Constructor logic here
     }
@@ -35,6 +34,14 @@ public class GeometryComponent
         return spiral;
     }
 
+
+    /// <summary>
+    /// Create a trimmed surface with outer and inner boundary as output from small vertices that form small slab
+    /// </summary>
+    /// <param name="tree"></param>
+    /// <returns></returns>
+    /// <exception cref="ArgumentException"></exception>
+    /// <exception cref="InvalidOperationException"></exception>
     public static (Brep brep, Curve outerBoundary, List<Curve> innerHoles) CreateCombinedTrimmedSurface(DataTree<Point3d> tree)
     {
         var breps = new List<Brep>();
@@ -82,6 +89,13 @@ public class GeometryComponent
         return (trimmedFace, outerLoop, innerLoops);
     }
 
+    /// <summary>
+    /// Create a surface from vertices for 4 closed points
+    /// </summary>
+    /// <param name="tree"></param>
+    /// <returns></returns>
+    /// <exception cref="ArgumentException"></exception>
+    /// <exception cref="InvalidOperationException"></exception>
     public static DataTree<Surface> CreateSurfaceFromVertices(DataTree<Point3d> tree)
     {
         var surfaces = new DataTree<Surface>();

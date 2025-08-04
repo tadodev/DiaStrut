@@ -1,4 +1,4 @@
-using DiaStrut.Core;
+using DiaStrut.Core.Geometry;
 using Grasshopper.Kernel;
 using Rhino.Geometry;
 using System;
@@ -93,7 +93,7 @@ namespace DiaStrut.Plugin.Components.Geometry
 
             // We're set to create the spiral now. To keep the size of the SolveInstance() method small, 
             // The actual functionality will be in a different method:
-            Curve spiral = GeometryComponent.CreateSpiral(plane, radius0, radius1, turns);
+            Curve spiral = SurfaceComponent.CreateSpiral(plane, radius0, radius1, turns);
 
             // Finally assign the spiral to the output parameter.
             DA.SetData(0, spiral);

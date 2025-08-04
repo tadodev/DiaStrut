@@ -1,4 +1,4 @@
-using DiaStrut.Core;
+using DiaStrut.Core.Geometry;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
@@ -50,7 +50,7 @@ namespace DiaStrut.Plugin.Components.Geometry
 
             try
             {
-                var surfaces = GeometryComponent.CreateSurfaceFromVertices(tree);
+                var surfaces = SurfaceComponent.CreateSurfaceFromVertices(tree);
                 DA.SetDataTree(0, surfaces);
             }
             catch (Exception ex)

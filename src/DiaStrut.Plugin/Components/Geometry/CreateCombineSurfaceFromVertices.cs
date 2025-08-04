@@ -1,4 +1,4 @@
-﻿using DiaStrut.Core;
+﻿using DiaStrut.Core.Geometry;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
@@ -65,7 +65,7 @@ namespace DiaStrut.Plugin.Components.Geometry
 
             try
             {
-                var (brep, outer, holes) = GeometryComponent.CreateCombinedTrimmedSurface(tree);
+                var (brep, outer, holes) = SurfaceComponent.CreateCombinedTrimmedSurface(tree);
                 DA.SetData(0, brep);
                 DA.SetData(1, outer);
                 DA.SetDataList(2, holes);
