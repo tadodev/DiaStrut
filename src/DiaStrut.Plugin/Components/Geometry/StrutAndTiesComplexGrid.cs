@@ -7,13 +7,13 @@ using System.Collections.Generic;
 
 namespace DiaStrut.Plugin.Components.Geometry
 {
-    public class CreateSlabGrid : GH_Component
+    public class StrutAndTiesComplexGrid : GH_Component
     {
         /// <summary>
         /// Initializes a new instance of the CreateSlabGrid class.
         /// </summary>
-        public CreateSlabGrid()
-          : base("Create Slab Grid", "SlabGrid",
+        public StrutAndTiesComplexGrid()
+          : base("Strut And Ties Complex Grid", "SlabGrid",
               "Create slab mesh and tie lines from a surface + control points",
               "DiaStrut", "Geometry")
         {
@@ -89,7 +89,7 @@ namespace DiaStrut.Plugin.Components.Geometry
             SlabGridResult result;
             try
             {
-                result = StrutAndTiesSimpleComponent.GenerateSlabGrid(
+                result = StrutAndTiesComplexComponent.GenerateSlabComplexGrid(
                              slab, ctrlPts, unit, meshSizeNullable, addDiag);
             }
             catch (Exception ex)

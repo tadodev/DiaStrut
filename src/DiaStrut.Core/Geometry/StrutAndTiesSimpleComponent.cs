@@ -8,320 +8,143 @@ namespace DiaStrut.Core.Geometry;
 
 public class StrutAndTiesSimpleComponent
 {
-
-    public static SlabGridResult GenerateSlabGrid(
+    /// <summary>
+    /// Generates a planar slab grid (mesh + tie lines) in the slab’s local plane.
+    /// </summary>
+    public static SlabGridResult GenerateSlabSimpleGrid(
         Brep slabFaceBrep,
         IEnumerable<Point3d> controlPoints,
-        UnitSystem unit = UnitSystem.Metric,
-        double? targetSpacing = null,
+        UnitSystem unitSystem = UnitSystem.Metric,
+        double? meshSizeOverride = null,
         bool addDiagonals = false,
-        double tol = 1e-4)
+        double tol = 1e-3)
     {
-        if (slabFaceBrep == null)
-            throw new ArgumentNullException(nameof(slabFaceBrep));
-        if (controlPoints == null)
-            throw new ArgumentNullException(nameof(controlPoints));
-
-        var controlPointsList = controlPoints.ToList();
+        // ─────────────────────────────── 0. Argument checks ───────────────────────────────
+        if (slabFaceBrep is null) throw new ArgumentNullException(nameof(slabFaceBrep));
+        if (controlPoints is null) throw new ArgumentNullException(nameof(controlPoints));
 
         if (slabFaceBrep.Faces.Count != 1)
-            throw new InvalidOperationException("Slab brep must have exactly 1 face.");
+            throw new ArgumentException("Brep must contain exactly one face.", nameof(slabFaceBrep));
 
         var face = slabFaceBrep.Faces[0];
+
         if (!face.IsPlanar(tol))
+            throw new InvalidOperationException("Only planar slabs are supported.");
+
+        // ─────────────────────────────── 1. Get slab plane & bounds ───────────────────────
+        if (!face.TryGetPlane(out Plane plane, tol))
+            throw new InvalidOperationException("Could not extract a plane from the face.");
+
+        // (Optional) include slab extents so the grid always spans the full face
+        var xSet = new SortedSet<double>();
+        var ySet = new SortedSet<double>();
+
+        foreach (var corner in slabFaceBrep.GetBoundingBox(true).GetCorners())           // NEW
         {
-            if (face.TryGetPlane(out Plane _, tol * 10))
-                throw new InvalidOperationException("Slab face is not planar within tolerance.");
-            else
-                throw new InvalidOperationException("Slab face is not planar.");
+            plane.ClosestParameter(corner, out double u, out double v);
+            xSet.Add(u); ySet.Add(v);
         }
 
-        var surface = face.UnderlyingSurface();
-        if (surface == null)
-            throw new InvalidOperationException("Could not get surface from face.");
+        // ─────────────────────────────── 2. Collect / project control points ──────────────
+        var pts = controlPoints.ToList();
+        if (pts.Count < 3)
+            throw new ArgumentException("At least three control points are required.", nameof(controlPoints));
 
-        Brep brep = face.DuplicateFace(false);
-        double step = targetSpacing ?? (unit == UnitSystem.Metric ? 1000.0 : 48.0);
-        if (step <= 0)
-            throw new ArgumentException("Invalid spacing.");
-
-        Interval uDom = surface.Domain(0);
-        Interval vDom = surface.Domain(1);
-
-        // ═══ STEP 1: Process control points and get their UV coordinates ═══
-        var validControlPoints = new List<(Point3d worldPt, Point3d surfacePt, double u, double v)>();
-
-        foreach (var ctrlPt in controlPointsList)
+        foreach (var p in pts)
         {
-            if (face.ClosestPoint(ctrlPt, out double u, out double v))
-            {
-                Point3d surfacePt = surface.PointAt(u, v);
-
-                // Project control point to surface plane if needed
-                if (face.TryGetPlane(out Plane slabPlane, tol))
-                {
-                    Point3d projectedPt = slabPlane.ClosestPoint(ctrlPt);
-                    Point3d finalPt = projectedPt.DistanceTo(ctrlPt) < step * 0.2 ? projectedPt : surfacePt;
-
-                    if (IsInsideOrOnBoundary(brep, surfacePt, tol * 5))
-                    {
-                        validControlPoints.Add((ctrlPt, finalPt, u, v));
-                    }
-                }
-                else if (IsInsideOrOnBoundary(brep, surfacePt, tol))
-                {
-                    validControlPoints.Add((ctrlPt, surfacePt, u, v));
-                }
-            }
+            plane.ClosestParameter(p, out double u, out double v);
+            if (!xSet.Any(x => Math.Abs(x - u) < tol)) xSet.Add(u);
+            if (!ySet.Any(y => Math.Abs(y - v) < tol)) ySet.Add(v);
         }
 
-        // ═══ STEP 2: Create adaptive grid stations including control points ═══
-        int nu = Math.Max(1, (int)Math.Round(uDom.Length / step));
-        int nv = Math.Max(1, (int)Math.Round(vDom.Length / step));
-        nu = Math.Min(nu, 200);
-        nv = Math.Min(nv, 200);
+        // ─────────────────────────────── 3. Determine spacing ────────────────────────────
+        double defaultSpacing = unitSystem == UnitSystem.Metric ? 1000.0 /* mm */
+                                                                : 4.0 * 12.0 /* in */;
+        double spacing = meshSizeOverride ?? defaultSpacing;
 
-        double du = uDom.Length / nu;
-        double dv = vDom.Length / nv;
+        var xGrid = BuildGridStations(xSet.ToList(), spacing, tol);
+        var yGrid = BuildGridStations(ySet.ToList(), spacing, tol);
 
-        // Start with regular grid stations
-        var uStationsSet = new SortedSet<double>();
-        var vStationsSet = new SortedSet<double>();
-
-        // Add regular stations
-        for (int i = 0; i <= nu; i++)
-            uStationsSet.Add(uDom.T0 + i * du);
-        for (int j = 0; j <= nv; j++)
-            vStationsSet.Add(vDom.T0 + j * dv);
-
-        // Add control point stations
-        double snapTolerance = Math.Min(du, dv) * 0.4; // 40% of grid spacing
-
-        foreach (var (worldPt, surfacePt, u, v) in validControlPoints)
-        {
-            // Check if we should snap to existing station or add new one
-            var closestU = uStationsSet.OrderBy(us => Math.Abs(us - u)).First();
-            var closestV = vStationsSet.OrderBy(vs => Math.Abs(vs - v)).First();
-
-            if (Math.Abs(closestU - u) > snapTolerance)
-                uStationsSet.Add(u);
-            if (Math.Abs(closestV - v) > snapTolerance)
-                vStationsSet.Add(v);
-        }
-
-        var uStations = uStationsSet.ToList();
-        var vStations = vStationsSet.ToList();
-
-        // ═══ STEP 3: Generate grid lines with control point integration ═══
-        var orthoLines = new List<Line>();
-
-        // U-direction lines
-        foreach (double u in uStations)
-        {
-            var line = new Line(surface.PointAt(u, vDom.T0), surface.PointAt(u, vDom.T1));
-            orthoLines.AddRange(ClipLineWithBrep(line, brep, tol));
-        }
-
-        // V-direction lines
-        foreach (double v in vStations)
-        {
-            var line = new Line(surface.PointAt(uDom.T0, v), surface.PointAt(uDom.T1, v));
-            orthoLines.AddRange(ClipLineWithBrep(line, brep, tol));
-        }
-
-        // ═══ STEP 4: Add control point connections ═══
-        var controlPointConnections = new List<Line>();
-        var controlPointNodes = new List<Point3d>();
-
-        foreach (var (worldPt, surfacePt, u, v) in validControlPoints)
-        {
-            controlPointNodes.Add(surfacePt);
-
-            // Find nearby grid intersection points
-            double connectionRadius = step * 0.8;
-            var nearbyGridPoints = new List<Point3d>();
-
-            foreach (var uStn in uStations)
-            {
-                foreach (var vStn in vStations)
-                {
-                    Point3d gridPt = surface.PointAt(uStn, vStn);
-                    if (IsInsideOrOnBoundary(brep, gridPt, tol))
-                    {
-                        double distance = surfacePt.DistanceTo(gridPt);
-                        if (distance <= connectionRadius && distance > tol * 10)
-                        {
-                            nearbyGridPoints.Add(gridPt);
-                        }
-                    }
-                }
-            }
-
-            // Connect to closest grid points (max 4 connections)
-            var sortedGridPoints = nearbyGridPoints
-                .OrderBy(pt => surfacePt.DistanceTo(pt))
-                .Take(4)
-                .ToList();
-
-            foreach (var gridPt in sortedGridPoints)
-            {
-                var connectionLine = new Line(surfacePt, gridPt);
-
-                // Verify connection doesn't cross holes
-                var clippedConnections = ClipLineWithBrep(connectionLine, brep, tol);
-                foreach (var clippedLine in clippedConnections)
-                {
-                    // Only add if connection is mostly intact (not interrupted by holes)
-                    if (clippedLine.Length > connectionLine.Length * 0.8)
-                    {
-                        controlPointConnections.Add(clippedLine);
-                    }
-                }
-            }
-        }
-
-        // Add connections to orthogonal lines
-        orthoLines.AddRange(controlPointConnections);
-
-        // ═══ STEP 5: Generate diagonal lines (avoid holes and control point conflicts) ═══
-        var diagonalLines = new List<Line>();
-        if (addDiagonals)
-        {
-            for (int i = 0; i < uStations.Count - 1; i++)
-            {
-                for (int j = 0; j < vStations.Count - 1; j++)
-                {
-                    double u0 = uStations[i];
-                    double u1 = uStations[i + 1];
-                    double v0 = vStations[j];
-                    double v1 = vStations[j + 1];
-
-                    // Check if cell center is inside (avoid diagonals across holes)
-                    Point3d cellCenter = surface.PointAt((u0 + u1) / 2, (v0 + v1) / 2);
-                    if (IsInsideOrOnBoundary(brep, cellCenter, tol))
-                    {
-                        var diag1 = new Line(surface.PointAt(u0, v0), surface.PointAt(u1, v1));
-                        var diag2 = new Line(surface.PointAt(u1, v0), surface.PointAt(u0, v1));
-
-                        diagonalLines.AddRange(ClipLineWithBrep(diag1, brep, tol));
-                        diagonalLines.AddRange(ClipLineWithBrep(diag2, brep, tol));
-                    }
-                }
-            }
-        }
-
-        // ═══ STEP 6: Generate mesh with control points integrated ═══
+        // ─────────────────────────────── 4. Build mesh vertices ───────────────────────────
         var mesh = new Mesh();
-        var nodeIndex = new Dictionary<(int, int), int>();
+        var index = new Dictionary<(int i, int j), int>();
 
-        // Add control points first
-        var controlPointIndices = new Dictionary<Point3d, int>();
-        foreach (var ctrlPt in controlPointNodes)
-        {
-            int index = mesh.Vertices.Add(ctrlPt);
-            controlPointIndices[ctrlPt] = index;
-        }
-
-        // Add grid vertices (avoiding duplicates with control points)
-        for (int i = 0; i < uStations.Count; i++)
-        {
-            for (int j = 0; j < vStations.Count; j++)
+        for (int i = 0; i < xGrid.Count; i++)
+            for (int j = 0; j < yGrid.Count; j++)
             {
-                var pt = surface.PointAt(uStations[i], vStations[j]);
-                if (IsInsideOrOnBoundary(brep, pt, tol))
-                {
-                    // Check if too close to any control point
-                    bool tooCloseToControl = controlPointNodes.Any(cp => cp.DistanceTo(pt) < tol * 20);
-
-                    if (!tooCloseToControl)
-                    {
-                        nodeIndex[(i, j)] = mesh.Vertices.Add(pt);
-                    }
-                }
+                Point3d pt3d = plane.PointAt(xGrid[i], yGrid[j]);
+                index[(i, j)] = mesh.Vertices.Add(pt3d);
             }
-        }
 
-        // Create mesh faces (only for cells that are fully inside)
-        for (int i = 0; i < uStations.Count - 1; i++)
-        {
-            for (int j = 0; j < vStations.Count - 1; j++)
+        // ─────────────────────────────── 5. Build mesh faces ──────────────────────────────
+        for (int i = 0; i < xGrid.Count - 1; i++)
+            for (int j = 0; j < yGrid.Count - 1; j++)
             {
-                var keys = new[] { (i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1) };
-
-                if (keys.All(k => nodeIndex.ContainsKey(k)))
-                {
-                    // Additional check: ensure cell center is inside (avoid faces across holes)
-                    double uCenter = (uStations[i] + uStations[i + 1]) / 2;
-                    double vCenter = (vStations[j] + vStations[j + 1]) / 2;
-                    Point3d cellCenter = surface.PointAt(uCenter, vCenter);
-
-                    if (IsInsideOrOnBoundary(brep, cellCenter, tol))
-                    {
-                        mesh.Faces.AddFace(
-                            nodeIndex[keys[0]],
-                            nodeIndex[keys[1]],
-                            nodeIndex[keys[2]],
-                            nodeIndex[keys[3]]
-                        );
-                    }
-                }
+                mesh.Faces.AddFace(
+                    index[(i, j)],
+                    index[(i + 1, j)],
+                    index[(i + 1, j + 1)],
+                    index[(i, j + 1)]);
             }
-        }
 
         mesh.Normals.ComputeNormals();
         mesh.Compact();
 
+        // ─────────────────────────────── 6. Strut & tie lines ─────────────────────────────
+        var ortho = new List<Line>();
+        var diag = new List<Line>();
+
+        // verticals
+        foreach (double u in xGrid)
+            ortho.Add(new Line(plane.PointAt(u, yGrid.First()),
+                               plane.PointAt(u, yGrid.Last())));
+
+        // horizontals
+        foreach (double v in yGrid)
+            ortho.Add(new Line(plane.PointAt(xGrid.First(), v),
+                               plane.PointAt(xGrid.Last(), v)));
+
+        // diagonals
+        if (addDiagonals)
+        {
+            for (int i = 0; i < xGrid.Count - 1; i++)
+                for (int j = 0; j < yGrid.Count - 1; j++)
+                {
+                    diag.Add(new Line(plane.PointAt(xGrid[i], yGrid[j]),
+                                      plane.PointAt(xGrid[i + 1], yGrid[j + 1])));
+
+                    diag.Add(new Line(plane.PointAt(xGrid[i + 1], yGrid[j]),
+                                      plane.PointAt(xGrid[i], yGrid[j + 1])));
+                }
+        }
+
         return new SlabGridResult
         {
             FloorMesh = mesh,
-            OrthoLines = orthoLines,
-            DiagonalLines = diagonalLines,
+            OrthoLines = ortho,
+            DiagonalLines = diag
         };
     }
 
-    private static IEnumerable<Line> ClipLineWithBrep(Line line, Brep brep, double tol)
+    /// <summary>Interpolates intermediate stations between pivot values.</summary>
+    private static List<double> BuildGridStations(IList<double> pivots, double spacing, double tol)
     {
-        if (line.Length < tol) return Enumerable.Empty<Line>();
+        var stations = new SortedSet<double>(pivots);
 
-        int sampleCount = Math.Max(20, (int)(line.Length / (tol * 50)));
-        var segments = new List<Line>();
-        var current = new List<Point3d>();
-
-        for (int i = 0; i <= sampleCount; i++)
+        for (int i = 0; i < pivots.Count - 1; i++)
         {
-            var pt = line.PointAt((double)i / sampleCount);
-            if (IsInsideOrOnBoundary(brep, pt, tol))
-                current.Add(pt);
-            else
+            double start = pivots[i];
+            double end = pivots[i + 1];
+
+            double current = start + spacing;
+            while (current < end - tol)
             {
-                if (current.Count >= 2)
-                    segments.Add(new Line(current.First(), current.Last()));
-                current.Clear();
+                stations.Add(current);
+                current += spacing;
             }
         }
-        if (current.Count >= 2)
-            segments.Add(new Line(current.First(), current.Last()));
-
-        return segments;
-    }
-
-    private static bool IsInsideOrOnBoundary(Brep brep, Point3d pt, double tol)
-    {
-        try
-        {
-            if (brep.IsPointInside(pt, tol, true)) return true;
-
-            bool foundClosest = brep.ClosestPoint(pt, out Point3d cp, out _, out _, out _, tol * 5, out _);
-            return foundClosest && pt.DistanceTo(cp) <= tol * 2;
-        }
-        catch
-        {
-            return false;
-        }
+        return stations.ToList();
     }
 }
-
-
-
 
 
